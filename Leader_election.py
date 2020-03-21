@@ -20,29 +20,32 @@ def initializeMySockets(IParray,myID,basePort):
     # First subscriber for subscribing I'm alive msg (topic 1)
     aliveSocket = context.socket(zmq.SUB)
     aliveSocket.setsockopt_string(zmq.SUBSCRIBE, "1")
-    aliveSocket.RCVTIMEO = int(aliveTime*2100)
+    aliveSocket.RCVTIMEO = int(aliveTime*2000)
     for i in range(len(IParray)):
         if i != myID:
             aliveSocket.connect(IParray[i])
     # Second subscriber for subscribing ok msg (topic 2)
     okSocket = context.socket(zmq.SUB)
     okSocket.setsockopt_string(zmq.SUBSCRIBE, "2")
-    okSocket.RCVTIMEO = int(aliveTime*3000)
-    for i in range(0,myID): # Connect with ID's lower than me
+    okSocket.RCVTIMEO = int(aliveTime*2000)
+    for i in range(myID+1,len(IParray)): # Connect with ID's lower than me
         okSocket.connect(IParray[i])
     # third subscriber for subscribing elect msg (topic 3)
     electSocket = context.socket(zmq.SUB)
     electSocket.setsockopt_string(zmq.SUBSCRIBE, "3")
-    for i in range(myID+1,len(IParray)): # Connect with ID's grater than me
+    for i in range(0,myID): # Connect with ID's grater than me
         electSocket.connect(IParray[i])
+    print("Initialization finished myID: %d" %myID)
     return publisherSocket,aliveSocket,okSocket,electSocket
 
 
 def elect(publisherSocket,aliveSocket,okSocket,electSocket,myID):
-    publisherSocket.send_string("3") # Send ok msg to clients that have ID grater than mine
+    global amIleadr
+    publisherSocket.send_string("3 %d"%myID) # Send elect msg to clients that have ID grater than mine
     message = ""
     try:
         message = okSocket.recv_string()
+        print("Received ok ID:%d" %myID)
     except zmq.error.Again:
         # If no client with ID grater than me then I'm the leader
         amIleadr = True
@@ -62,48 +65,45 @@ def elect(publisherSocket,aliveSocket,okSocket,electSocket,myID):
 
 def sendAliveLeader(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
     global amIleadr
-    synlock.acquire()
     amIleadr = True
     print("D5lt send alive ID=%d" % myID)
     t = time.time()
-    m=0
     while True:
-        m+=1
-        if m >= 100000000:
-            amIleadr=False
         if amIleadr == False: # Check if another leader was found
             break
         publish = False
         if time.time()-t >= aliveTime:
             t = time.time()
             publish = True 
-        if publish:
-            print("Send alive msg")
+        if publish and amIleadr:
+            print("Send alive msg myID: %d" %myID)
             publisherSocket.send_string("1 /"+IParray[myID])
     checkIsAlive(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID)
-    synlock.release()
 
 
 # Check if there was a leader sleeping or busy and I took its place
 def checkThereIsAnotherLeader(IParray,aliveSocket,publisherSocket,okSocket,electSocket,myID):
     global amIleadr
-    print("D5lt check another alive ID= %d" %myID)
+    amIleadr = True
     while True:
         try:
-            aliveSocket.recv_string()
-            amIleadr = False
-            print("I'm not the leader now")
-            break
+            msg = aliveSocket.recv_string()
+            if int(msg.split(":")[-1]) > int(IParray[myID].split(":")[-1]): # If there is a leader with ID grater than me then make it the leader
+                amIleadr = False
+                print("I'm not the leader now my ID:%d"%myID)
+                break
         except zmq.error.Again:
             continue
     checkForElection(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID)
     
 def checkIsAlive(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
+    global amIleadr
+    amIleadr = False
     while True:
         try:
             message = aliveSocket.recv_string()
             message = message.split("/")
-            print("Leader with IP: %s is alive" % message[-1])
+            print("My ID:%d Leader with IP: %s is alive" % (myID,message[-1]))
         except zmq.error.Again:
             print("There is no leader we need election")
             if elect(publisherSocket,aliveSocket,okSocket,electSocket,myID) or amIleadr: # Then I'm the leader
@@ -112,9 +112,13 @@ def checkIsAlive(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
             
 
 def checkForElection(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
+    global amIleadr
+    amIleadr = False
     while True:
-        electSocket.recv_string()
+        msg = electSocket.recv_string()
+        print("Received elect msg from:%s ,,,,,, myID:%d"%(msg.split()[-1],myID))
         publisherSocket.send_string("2")
+        print("Ok sent ID:%d" %myID)
         if elect(publisherSocket,aliveSocket,okSocket,electSocket,myID) or amIleadr: # Then I'm the leader
             break
     checkThereIsAnotherLeader(IParray,aliveSocket,publisherSocket,okSocket,electSocket,myID)
@@ -128,5 +132,5 @@ def main(IParray,myID,basePort):
     t2 = Thread(target=checkForElection,args=(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID))
     t1.start()
     t2.start()
-    t1.join()
-    t2.join()
+   
+    # Write the logic of the program here
