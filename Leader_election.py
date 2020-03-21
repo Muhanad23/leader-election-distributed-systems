@@ -1,13 +1,13 @@
 import zmq
 import socket
 import time
-from threading import Thread
+from threading import Thread,RLock
 
 # To know if I'm the leader or not
 amIleadr = False
 # I'm alive time
-aliveTime = 0.1
-
+aliveTime = .5
+synlock = RLock()
 
 # IParray: holding IP's for all machines in the system, myID: containing my ID (index), basePort: 
 def initializeMySockets(IParray,myID,basePort):
@@ -16,27 +16,25 @@ def initializeMySockets(IParray,myID,basePort):
     context = zmq.Context()
     publisherSocket = context.socket(zmq.PUB)
     port = basePort + myID
-    publisherSocket.bind("tcp://*:%s" % str(port))
+    publisherSocket.bind("tcp://127.0.0.1:%s" % str(port))
     # First subscriber for subscribing I'm alive msg (topic 1)
     aliveSocket = context.socket(zmq.SUB)
-    aliveSocket.setsockopt(zmq.SUBSCRIBE, "1")
-    aliveSocket.RCVTIMEO = aliveTime + .1*aliveTime
+    aliveSocket.setsockopt_string(zmq.SUBSCRIBE, "1")
+    aliveSocket.RCVTIMEO = int(aliveTime*2100)
     for i in range(len(IParray)):
         if i != myID:
             aliveSocket.connect(IParray[i])
     # Second subscriber for subscribing ok msg (topic 2)
     okSocket = context.socket(zmq.SUB)
-    okSocket.setsockopt(zmq.SUBSCRIBE, "2")
-    okSocket.RCVTIMEO = aliveTime + .1*aliveTime
-    for i in range(0,len(IParray)): # Connect with ID's lower than me
-        if i != myID:
-            okSocket.connect(IParray[i])
+    okSocket.setsockopt_string(zmq.SUBSCRIBE, "2")
+    okSocket.RCVTIMEO = int(aliveTime*3000)
+    for i in range(0,myID): # Connect with ID's lower than me
+        okSocket.connect(IParray[i])
     # third subscriber for subscribing elect msg (topic 3)
     electSocket = context.socket(zmq.SUB)
-    electSocket.setsockopt(zmq.SUBSCRIBE, "3")
+    electSocket.setsockopt_string(zmq.SUBSCRIBE, "3")
     for i in range(myID+1,len(IParray)): # Connect with ID's grater than me
-        if i != myID:
-            electSocket.connect(IParray[i])
+        electSocket.connect(IParray[i])
     return publisherSocket,aliveSocket,okSocket,electSocket
 
 
@@ -59,12 +57,20 @@ def elect(publisherSocket,aliveSocket,okSocket,electSocket,myID):
             return False
         except zmq.error.Again:
             continue
+    return False
 
 
-def sendAliveLeader(IParray,myID,publisherSocket):
+def sendAliveLeader(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
     global amIleadr
+    synlock.acquire()
+    amIleadr = True
+    print("D5lt send alive ID=%d" % myID)
     t = time.time()
+    m=0
     while True:
+        m+=1
+        if m >= 100000000:
+            amIleadr=False
         if amIleadr == False: # Check if another leader was found
             break
         publish = False
@@ -72,13 +78,16 @@ def sendAliveLeader(IParray,myID,publisherSocket):
             t = time.time()
             publish = True 
         if publish:
+            print("Send alive msg")
             publisherSocket.send_string("1 /"+IParray[myID])
-    checkForElection(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID)
+    checkIsAlive(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID)
+    synlock.release()
 
 
 # Check if there was a leader sleeping or busy and I took its place
-def checkThereIsAnotherLeader(aliveSocket,publisherSocket,okSocket,electSocket,myID):
+def checkThereIsAnotherLeader(IParray,aliveSocket,publisherSocket,okSocket,electSocket,myID):
     global amIleadr
+    print("D5lt check another alive ID= %d" %myID)
     while True:
         try:
             aliveSocket.recv_string()
@@ -87,42 +96,37 @@ def checkThereIsAnotherLeader(aliveSocket,publisherSocket,okSocket,electSocket,m
             break
         except zmq.error.Again:
             continue
-    checkIsAlive(publisherSocket,aliveSocket,okSocket,electSocket,myID)
-
+    checkForElection(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID)
     
-def checkIsAlive(publisherSocket,aliveSocket,okSocket,electSocket,myID):
+def checkIsAlive(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
     while True:
         try:
             message = aliveSocket.recv_string()
             message = message.split("/")
-            print("Leadr with IP: %s is alive" % message[-1])
+            print("Leader with IP: %s is alive" % message[-1])
         except zmq.error.Again:
-            print("Leader died we need election")
-            if elect(publisherSocket,aliveSocket,okSocket,electSocket,myID): # Then I'm the leader
+            print("There is no leader we need election")
+            if elect(publisherSocket,aliveSocket,okSocket,electSocket,myID) or amIleadr: # Then I'm the leader
                 break
-    checkThereIsAnotherLeader(aliveSocket,publisherSocket,okSocket,electSocket,myID)
+    sendAliveLeader(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID)
             
 
 def checkForElection(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
     while True:
         electSocket.recv_string()
-        if elect(publisherSocket,aliveSocket,okSocket,electSocket,myID): # Then I'm the leader
+        publisherSocket.send_string("2")
+        if elect(publisherSocket,aliveSocket,okSocket,electSocket,myID) or amIleadr: # Then I'm the leader
             break
-    sendAliveLeader(IParray,myID,publisherSocket)
+    checkThereIsAnotherLeader(IParray,aliveSocket,publisherSocket,okSocket,electSocket,myID)
 
 
 
 def main(IParray,myID,basePort):
     publisherSocket,aliveSocket,okSocket,electSocket = initializeMySockets(IParray,myID,basePort)
     # Initially there is no leader until all clients elect
-    Thread(target=checkIsAlive(publisherSocket,aliveSocket,okSocket,electSocket,myID)).start()
-    Thread(target=checkForElection(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID)).start()
-            
-        
-
-
-
-
-
-
-
+    t1 = Thread(target=checkIsAlive,args=(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID))
+    t2 = Thread(target=checkForElection,args=(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
