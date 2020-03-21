@@ -45,7 +45,7 @@ def elect(publisherSocket,aliveSocket,okSocket,electSocket,myID):
     message = ""
     try:
         message = okSocket.recv_string()
-        print("Received ok ID:%d" %myID)
+        print("Received ok msg from ID:%s" %message.split()[-1])
     except zmq.error.Again:
         # If no client with ID grater than me then I'm the leader
         amIleadr = True
@@ -65,7 +65,6 @@ def elect(publisherSocket,aliveSocket,okSocket,electSocket,myID):
 
 def sendAliveLeader(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
     global amIleadr
-    amIleadr = True
     print("D5lt send alive ID=%d" % myID)
     t = time.time()
     while True:
@@ -84,8 +83,9 @@ def sendAliveLeader(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myI
 # Check if there was a leader sleeping or busy and I took its place
 def checkThereIsAnotherLeader(IParray,aliveSocket,publisherSocket,okSocket,electSocket,myID):
     global amIleadr
-    amIleadr = True
     while True:
+        if amIleadr == False:
+            break
         try:
             msg = aliveSocket.recv_string()
             if int(msg.split(":")[-1]) > int(IParray[myID].split(":")[-1]): # If there is a leader with ID grater than me then make it the leader
@@ -98,7 +98,6 @@ def checkThereIsAnotherLeader(IParray,aliveSocket,publisherSocket,okSocket,elect
     
 def checkIsAlive(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
     global amIleadr
-    amIleadr = False
     while True:
         try:
             message = aliveSocket.recv_string()
@@ -113,11 +112,10 @@ def checkIsAlive(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
 
 def checkForElection(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
     global amIleadr
-    amIleadr = False
     while True:
         msg = electSocket.recv_string()
         print("Received elect msg from:%s ,,,,,, myID:%d"%(msg.split()[-1],myID))
-        publisherSocket.send_string("2")
+        publisherSocket.send_string("2 %d" %myID)
         print("Ok sent ID:%d" %myID)
         if elect(publisherSocket,aliveSocket,okSocket,electSocket,myID) or amIleadr: # Then I'm the leader
             break
