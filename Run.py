@@ -3,6 +3,7 @@ import Leader_election
 import time
 
 if __name__ == '__main__':
+    timePeriod = 5
     numberOfClients = 5 # To test on one machine
     basePort = 7000
     processes = []
@@ -13,6 +14,26 @@ if __name__ == '__main__':
 
     for j in processes:
         j.start()
+
+    t = time.time()    
+    count = 0
+    while (True):
+        if (time.time()-t >= timePeriod and count == 0):
+            print("-------------------------------------Process #4 termenated--------------------------------------")
+            processes[4].terminate()
+            count+=1
         
-    for j in processes:
-        j.join()
+        if (time.time()-t >= 2*timePeriod and count == 1):
+            print("-------------------------------------Process #3 termenated--------------------------------------")
+            processes[3].terminate()
+            count+=1
+        
+        if (time.time()-t >= 3*timePeriod and count == 2):
+            print("-------------------------------------Process #2 termenated--------------------------------------")
+            processes[2].terminate()
+            count+=1
+        
+        if (time.time()-t >= 4*timePeriod and count == 3):
+            print("-------------------------------------Process #1 termenated--------------------------------------")
+            processes[1].terminate()
+            count+=1

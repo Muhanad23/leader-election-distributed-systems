@@ -33,6 +33,7 @@ def initializeMySockets(IParray,myID,basePort):
     # third subscriber for subscribing elect msg (topic 3)
     electSocket = context.socket(zmq.SUB)
     electSocket.setsockopt_string(zmq.SUBSCRIBE, "3")
+    electSocket.RCVTIMEO = int(aliveTime*10)
     for i in range(0,myID): # Connect with ID's grater than me
         electSocket.connect(IParray[i])
     print("Initialization finished myID: %d" %myID)
@@ -51,21 +52,12 @@ def elect(publisherSocket,aliveSocket,okSocket,electSocket,myID):
         amIleadr = True
         print("I'm now the leader , my ID = %d" %myID)
         return True
-    # Else wait until there is a new leader , if waiting doesn't matter then return instead of waiting
-    while True:
-        try:
-            message = aliveSocket.recv_string()
-            message = message.split("/")
-            print("A new leader with IP: %s is selected" %message[-1])
-            return False
-        except zmq.error.Again:
-            continue
     return False
 
 
 def sendAliveLeader(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
     global amIleadr
-    print("D5lt send alive ID=%d" % myID)
+    amIleadr = True
     t = time.time()
     while True:
         if amIleadr == False: # Check if another leader was found
@@ -83,6 +75,7 @@ def sendAliveLeader(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myI
 # Check if there was a leader sleeping or busy and I took its place
 def checkThereIsAnotherLeader(IParray,aliveSocket,publisherSocket,okSocket,electSocket,myID):
     global amIleadr
+    amIleadr = True
     while True:
         if amIleadr == False:
             break
@@ -113,12 +106,19 @@ def checkIsAlive(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
 def checkForElection(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
     global amIleadr
     while True:
-        msg = electSocket.recv_string()
-        print("Received elect msg from:%s ,,,,,, myID:%d"%(msg.split()[-1],myID))
-        publisherSocket.send_string("2 %d" %myID)
-        print("Ok sent ID:%d" %myID)
-        if elect(publisherSocket,aliveSocket,okSocket,electSocket,myID) or amIleadr: # Then I'm the leader
-            break
+        print("Process #"+str(myID)+" M7shora henaaaaaaaaaaa")
+        try:
+            if amIleadr == True:
+                break
+            msg = electSocket.recv_string()
+            print("Received elect msg from:%s ,,,,,, myID:%d"%(msg.split()[-1],myID))
+            publisherSocket.send_string("2 %d" %myID)
+            print("Ok sent ID:%d" %myID)
+            if elect(publisherSocket,aliveSocket,okSocket,electSocket,myID) or amIleadr: # Then I'm the leader
+                break
+        except zmq.error.Again:
+            if amIleadr == True:
+                break
     checkThereIsAnotherLeader(IParray,aliveSocket,publisherSocket,okSocket,electSocket,myID)
 
 
