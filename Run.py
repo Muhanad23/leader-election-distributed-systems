@@ -28,12 +28,4 @@ if __name__ == '__main__':
             processes[3].terminate()
             count+=1
         
-        if (time.time()-t >= 3*timePeriod and count == 2):
-            print("-------------------------------------Process #2 termenated--------------------------------------")
-            processes[2].terminate()
-            count+=1
-        
-        if (time.time()-t >= 4*timePeriod and count == 3):
-            print("-------------------------------------Process #1 termenated--------------------------------------")
-            processes[1].terminate()
-            count+=1
+       

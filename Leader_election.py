@@ -106,7 +106,6 @@ def checkIsAlive(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
 def checkForElection(IParray,publisherSocket,aliveSocket,okSocket,electSocket,myID):
     global amIleadr
     while True:
-        print("Process #"+str(myID)+" M7shora henaaaaaaaaaaa")
         try:
             if amIleadr == True:
                 break
